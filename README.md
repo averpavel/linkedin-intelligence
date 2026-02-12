@@ -26,6 +26,8 @@ Turn your LinkedIn data export into an interactive browser dashboard. Analyze yo
 
 ![Clusters](screenshots/06-clusters.png)
 
+**Natural Language Queries** — Ask questions about your data in plain English. "Who do I know at Google?", "Summarize my posts about AI", "Show me VP-level connections" — powered by Claude.
+
 ## Quick Start
 
 ### 1. Export your LinkedIn data
@@ -38,13 +40,11 @@ Go to [linkedin.com/mypreferences/d/download-my-data](https://www.linkedin.com/m
 pip install pandas openpyxl
 ```
 
-### 3. Run the dashboard generator
+### 3. Place your export
 
-Place your extracted LinkedIn export folder in this directory, then update the path in `build_dashboard.py`:
+Copy the extracted LinkedIn export folder into this directory. The script auto-detects any folder named `Complete_LinkedInDataExport_*`.
 
-```python
-EXPORT_DIR = "./your-linkedin-export-folder"
-```
+### 4. Generate the dashboard
 
 ```bash
 python build_dashboard.py
@@ -52,6 +52,29 @@ open dashboard.html
 ```
 
 That's it. One HTML file, no server needed.
+
+### 5. Query your data (optional)
+
+Use the CLI to query your LinkedIn data directly:
+
+```bash
+# Overview stats
+python query_linkedin.py --type summary
+
+# Find connections at a company
+python query_linkedin.py --type connections --company "Google"
+
+# Filter by seniority
+python query_linkedin.py --type connections --seniority "VP" --seniority "Director"
+
+# Search posts by topic
+python query_linkedin.py --type posts --search "AI"
+
+# Recent connections (last 90 days)
+python query_linkedin.py --type connections --recent 90
+```
+
+Or just ask Claude in natural language — the skill handles the rest.
 
 ## Dashboard Tabs
 
@@ -78,6 +101,36 @@ On the Connections tab, click **+ Add Filter** to open the filter builder:
 
 Filters stack: add as many as you need. Each shows as a removable tag. All filters must match (AND logic).
 
+## Natural Language Queries
+
+With the Claude Code skill active, just ask questions about your data:
+
+```
+"Who do I know at Google?"
+"Show me all VPs and Directors in my network"
+"Summarize my posts about RevOps"
+"How many connections did I make in 2025?"
+"Find founders I'm connected with"
+"What are the top companies in my network?"
+"Show me my recent posts about AI"
+```
+
+Claude runs `query_linkedin.py` with the right filters, parses the results, and answers conversationally — including follow-up questions.
+
+### Query CLI Reference
+
+| Flag | Description |
+|---|---|
+| `--type` | `summary`, `connections`, `posts`, `comments`, `reactions` |
+| `--company` | Filter by company name (partial match) |
+| `--seniority` | Filter by level (repeatable for multiple) |
+| `--position` | Filter by position keyword |
+| `--search` | Full-text search |
+| `--year` | Filter by year |
+| `--recent N` | Connections from last N days |
+| `--post-type` | `Long Text`, `Short Text`, `Media`, `Link Share`, `Repost` |
+| `--limit N` | Max results (default 500) |
+
 ## Privacy
 
 Your data stays local. Nothing is sent to any server.
@@ -103,13 +156,15 @@ Your data stays local. Nothing is sent to any server.
 ## Project Structure
 
 ```
-├── build_dashboard.py          # Main script — generates dashboard.html
-├── generate_mock_dashboard.py  # Generate demo dashboard with sample data
-├── take_screenshots.py         # Capture dashboard screenshots
-├── SKILL.md                    # Detailed skill documentation
+├── linkedin_data.py             # Shared data loading & processing module
+├── build_dashboard.py           # Generates dashboard.html
+├── query_linkedin.py            # CLI query tool for natural language queries
+├── generate_mock_dashboard.py   # Generate demo dashboard with sample data
+├── take_screenshots.py          # Capture dashboard screenshots
+├── SKILL.md                     # Detailed skill documentation
 ├── README.md
 ├── .gitignore
-├── screenshots/                # Dashboard screenshots for README
+├── screenshots/                 # Dashboard screenshots for README
 └── examples/
     └── workflow_*.md
 ```

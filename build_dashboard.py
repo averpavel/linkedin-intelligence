@@ -6,12 +6,12 @@ Outputs a single self-contained HTML file.
 import pandas as pd
 import json
 import os
-import re
 from datetime import datetime, timedelta
-from urllib.parse import unquote
 
-EXPORT_DIR = "/Users/pavelaverin/Desktop/LinkedIn Skill/Complete_LinkedInDataExport_01-20-2026.zip"
-OUTPUT_PATH = "/Users/pavelaverin/Desktop/LinkedIn Skill/dashboard.html"
+from linkedin_data import find_export_dir, load_connections, load_shares, load_comments, load_reactions, enrich_posts
+
+EXPORT_DIR = find_export_dir()
+OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
 
 # =====================
 # 1. LOAD & PROCESS DATA
@@ -19,46 +19,10 @@ OUTPUT_PATH = "/Users/pavelaverin/Desktop/LinkedIn Skill/dashboard.html"
 
 print("Loading data...")
 
-conn_df = pd.read_csv(os.path.join(EXPORT_DIR, "Connections.csv"), skiprows=2)
-conn_df.columns = conn_df.columns.str.strip()
-conn_df["Connected On"] = pd.to_datetime(conn_df["Connected On"], format="mixed", dayfirst=True, errors="coerce")
-for col in ["Company", "Position", "First Name", "Last Name"]:
-    conn_df[col] = conn_df[col].fillna("Not Specified").str.strip()
-conn_df["Full Name"] = conn_df["First Name"] + " " + conn_df["Last Name"]
-
-shares_df = pd.read_csv(os.path.join(EXPORT_DIR, "Shares.csv"), on_bad_lines="skip", engine="python")
-shares_df.columns = shares_df.columns.str.strip()
-shares_df["Date"] = pd.to_datetime(shares_df["Date"], format="mixed", errors="coerce")
-
-comments_df = pd.read_csv(os.path.join(EXPORT_DIR, "Comments.csv"), on_bad_lines="skip", engine="python")
-comments_df.columns = comments_df.columns.str.strip()
-comments_df["Date"] = pd.to_datetime(comments_df["Date"], format="mixed", errors="coerce")
-
-reactions_df = pd.read_csv(os.path.join(EXPORT_DIR, "Reactions.csv"), on_bad_lines="skip", engine="python")
-reactions_df.columns = reactions_df.columns.str.strip()
-reactions_df["Date"] = pd.to_datetime(reactions_df["Date"], format="mixed", errors="coerce")
-
-# --- Seniority classification ---
-def classify_seniority(position):
-    pos = str(position).lower()
-    if any(x in pos for x in ["ceo", "cto", "cfo", "coo", "cro", "chief", "founder", "co-founder", "owner", "partner"]):
-        return "C-Level / Founder"
-    elif any(x in pos for x in ["vp", "vice president"]):
-        return "VP"
-    elif "director" in pos:
-        return "Director"
-    elif any(x in pos for x in ["head of", "head "]):
-        return "Head of"
-    elif any(x in pos for x in ["manager", "lead", "team lead"]):
-        return "Manager / Lead"
-    elif any(x in pos for x in ["senior", "sr.", "sr "]):
-        return "Senior IC"
-    elif any(x in pos for x in ["junior", "jr.", "intern", "trainee", "associate"]):
-        return "Junior / Associate"
-    else:
-        return "IC / Specialist"
-
-conn_df["Seniority"] = conn_df["Position"].apply(classify_seniority)
+conn_df = load_connections(EXPORT_DIR)
+shares_df = load_shares(EXPORT_DIR)
+comments_df = load_comments(EXPORT_DIR)
+reactions_df = load_reactions(EXPORT_DIR)
 
 # =====================
 # POST ENRICHMENT — match comments to posts by URL
@@ -66,69 +30,25 @@ conn_df["Seniority"] = conn_df["Position"].apply(classify_seniority)
 
 print("Enriching post data...")
 
-def extract_urn(url):
-    """Extract the LinkedIn URN ID from a share/activity URL."""
-    if not isinstance(url, str):
-        return None
-    url = unquote(url)
-    # Match share or activity URN
-    m = re.search(r'urn:li:(?:share|activity|ugcPost):(\d+)', url)
-    return m.group(1) if m else None
+posts_list_full = enrich_posts(shares_df, comments_df)
 
-# Build share URN -> index mapping
-shares_clean = shares_df.dropna(subset=["Date"]).copy()
-if "ShareLink" in shares_clean.columns:
-    shares_clean["urn"] = shares_clean["ShareLink"].apply(extract_urn)
-else:
-    shares_clean["urn"] = None
-
-# Count comments per post URN (your own comments on your posts)
-if "Link" in comments_df.columns:
-    comments_df["urn"] = comments_df["Link"].apply(extract_urn)
-    comments_per_post = comments_df.groupby("urn").size().to_dict()
-else:
-    comments_per_post = {}
-
-# Build post list with enrichment
+# Dashboard uses preview-only format (no full content needed in HTML)
 posts_list = []
-for _, r in shares_clean.iterrows():
-    commentary = str(r.get("ShareCommentary", "")) if pd.notna(r.get("ShareCommentary")) else ""
-    # Clean up the escaped quotes from CSV
-    commentary = commentary.replace('""', '"').strip().strip('"')
-    preview = commentary[:200] + ("..." if len(commentary) > 200 else "")
-    word_count = len(commentary.split()) if commentary else 0
-    urn = r.get("urn", "")
-    link = r.get("ShareLink", "")
-    shared_url = str(r.get("SharedUrl", "")) if pd.notna(r.get("SharedUrl")) else ""
-    has_media = bool(str(r.get("MediaUrl", "")).strip()) if pd.notna(r.get("MediaUrl")) else False
-    has_link = bool(shared_url.strip())
-    visibility = str(r.get("Visibility", "")) if pd.notna(r.get("Visibility")) else ""
-
-    # Determine post type
-    if has_media:
-        post_type = "Media"
-    elif has_link:
-        post_type = "Link Share"
-    elif word_count > 100:
-        post_type = "Long Text"
-    elif word_count > 0:
-        post_type = "Short Text"
-    else:
-        post_type = "Repost"
-
-    comment_count = comments_per_post.get(urn, 0) if urn else 0
-
+for p in posts_list_full:
     posts_list.append({
-        "date": r["Date"].strftime("%Y-%m-%d") if pd.notna(r["Date"]) else "",
-        "day": r["Date"].strftime("%A") if pd.notna(r["Date"]) else "",
-        "hour": int(r["Date"].hour) if pd.notna(r["Date"]) else 0,
-        "preview": preview,
-        "wordCount": word_count,
-        "type": post_type,
-        "comments": comment_count,
-        "link": link if isinstance(link, str) else "",
-        "visibility": visibility,
+        "date": p["date"],
+        "day": p["day"],
+        "hour": p["hour"],
+        "preview": p["preview"],
+        "wordCount": p["wordCount"],
+        "type": p["type"],
+        "comments": p["comments"],
+        "link": p["link"],
+        "visibility": p["visibility"],
     })
+
+# For chart data we need the shares_clean with URNs
+shares_clean = shares_df.dropna(subset=["Date"]).copy()
 
 # =====================
 # ALL CONNECTIONS for filterable table
