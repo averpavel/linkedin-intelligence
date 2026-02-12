@@ -1,0 +1,36 @@
+# === LinkedIn personal data — NEVER commit ===
+Complete_LinkedInDataExport*/
+*.zip
+Connections.csv
+Shares.csv
+Comments.csv
+Reactions.csv
+Profile.csv
+Positions.csv
+Messages.csv
+*.csv
+
+# Generated output
+dashboard.html
+*.xlsx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude
+.claude/
