@@ -158,12 +158,71 @@ def enrich_posts(shares_df, comments_df):
     return posts_list
 
 
+def load_messages(export_dir):
+    """Load and process messages.csv, grouped into conversations."""
+    path = os.path.join(export_dir, "messages.csv")
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    df = pd.read_csv(path, on_bad_lines="skip", engine="python")
+    df.columns = df.columns.str.strip()
+    df["DATE"] = pd.to_datetime(df["DATE"], format="mixed", errors="coerce", utc=True)
+    return df
+
+
+def build_conversations(messages_df, owner_name="Pavel Averin"):
+    """Group messages into conversations with metadata."""
+    if messages_df.empty:
+        return []
+
+    convos = []
+    for conv_id, msgs in messages_df.groupby("CONVERSATION ID"):
+        msgs = msgs.sort_values("DATE", ascending=True)
+
+        participants = set()
+        for _, m in msgs.iterrows():
+            fr = str(m.get("FROM", ""))
+            to = str(m.get("TO", ""))
+            if fr and fr != "nan":
+                participants.add(fr)
+            if to and to != "nan":
+                participants.add(to)
+        participants.discard(owner_name)
+        other = ", ".join(sorted(participants)) if participants else "Unknown"
+
+        last_msg = msgs.iloc[-1]
+        last_from = str(last_msg.get("FROM", ""))
+        last_date = last_msg["DATE"]
+
+        content = str(last_msg.get("CONTENT", ""))
+        # Strip HTML tags
+        content = re.sub(r"<[^>]+>", " ", content)
+        try:
+            from html import unescape
+            content = unescape(content)
+        except Exception:
+            pass
+        content = re.sub(r"\s+", " ", content).strip()
+
+        convos.append({
+            "other": other,
+            "msg_count": len(msgs),
+            "last_date": last_date.strftime("%Y-%m-%d %H:%M") if pd.notna(last_date) else "",
+            "last_from": last_from,
+            "last_content": content[:500] + ("..." if len(content) > 500 else ""),
+            "awaiting_your_reply": last_from != owner_name,
+        })
+
+    convos.sort(key=lambda x: x["last_date"], reverse=True)
+    return convos
+
+
 def load_all(export_dir):
     """Load all LinkedIn data. Returns dict with DataFrames and enriched posts."""
     conn_df = load_connections(export_dir)
     shares_df = load_shares(export_dir)
     comments_df = load_comments(export_dir)
     reactions_df = load_reactions(export_dir)
+    messages_df = load_messages(export_dir)
     posts_list = enrich_posts(shares_df, comments_df)
 
     return {
@@ -171,5 +230,6 @@ def load_all(export_dir):
         "shares": shares_df,
         "comments": comments_df,
         "reactions": reactions_df,
+        "messages": messages_df,
         "posts": posts_list,
     }

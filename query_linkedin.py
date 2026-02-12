@@ -18,7 +18,7 @@ import sys
 import pandas as pd
 from datetime import datetime, timedelta
 
-from linkedin_data import find_export_dir, load_all
+from linkedin_data import find_export_dir, load_all, build_conversations
 
 
 def build_summary(data):
@@ -214,9 +214,55 @@ def query_reactions(data, args):
     }
 
 
+def query_messages(data, args):
+    """Filter and return message conversations."""
+    messages_df = data["messages"]
+    if messages_df.empty:
+        return {"type": "messages", "total": 0, "showing": 0, "filters": {}, "results": [],
+                "error": "No messages.csv found in export"}
+
+    filters = {}
+
+    # Filter by recency
+    if args.recent:
+        cutoff = pd.Timestamp.now(tz="UTC") - timedelta(days=args.recent)
+        messages_df = messages_df[messages_df["DATE"] >= cutoff]
+        filters["recent_days"] = args.recent
+
+    if args.year:
+        messages_df = messages_df[messages_df["DATE"].dt.year == args.year]
+        filters["year"] = args.year
+
+    convos = build_conversations(messages_df)
+
+    # Filter by search (matches person name or message content)
+    if args.search:
+        pattern = args.search.lower()
+        convos = [c for c in convos if
+                  pattern in c["other"].lower() or
+                  pattern in c["last_content"].lower()]
+        filters["search"] = args.search
+
+    # Filter by awaiting reply only
+    if args.awaiting_reply:
+        convos = [c for c in convos if c["awaiting_your_reply"]]
+        filters["awaiting_reply"] = True
+
+    total = len(convos)
+    results = convos[:args.limit]
+
+    return {
+        "type": "messages",
+        "total": total,
+        "showing": len(results),
+        "filters": filters,
+        "results": results,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Query LinkedIn export data")
-    parser.add_argument("--type", choices=["summary", "connections", "posts", "comments", "reactions"],
+    parser.add_argument("--type", choices=["summary", "connections", "posts", "comments", "reactions", "messages"],
                         default="summary", help="Type of data to query")
     parser.add_argument("--company", help="Filter connections by company name (partial match)")
     parser.add_argument("--seniority", action="append",
@@ -226,6 +272,7 @@ def main():
     parser.add_argument("--year", type=int, help="Filter by year")
     parser.add_argument("--recent", type=int, help="Connections from last N days")
     parser.add_argument("--post-type", help="Filter posts by type (Long Text, Short Text, Media, Link Share, Repost)")
+    parser.add_argument("--awaiting-reply", action="store_true", help="Show only conversations awaiting your reply")
     parser.add_argument("--limit", type=int, default=500, help="Max results to return (default: 500)")
     parser.add_argument("--export-dir", help="Path to LinkedIn export directory (auto-detected if omitted)")
 
@@ -252,6 +299,8 @@ def main():
         result = query_comments(data, args)
     elif args.type == "reactions":
         result = query_reactions(data, args)
+    elif args.type == "messages":
+        result = query_messages(data, args)
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
