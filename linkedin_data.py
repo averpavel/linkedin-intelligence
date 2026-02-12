@@ -25,12 +25,13 @@ def find_export_dir(base_dir=None):
 def classify_seniority(position):
     """Classify a job title into a seniority level."""
     pos = str(position).lower()
-    if any(x in pos for x in ["ceo", "cto", "cfo", "coo", "cro", "chief", "founder", "co-founder", "owner", "partner"]):
+    # Check director before C-Level because "cto" substring matches inside "director"
+    if "director" in pos:
+        return "Director"
+    elif any(x in pos for x in ["ceo", "cto", "cfo", "coo", "cro", "chief", "founder", "co-founder", "owner", "partner"]):
         return "C-Level / Founder"
     elif any(x in pos for x in ["vp", "vice president"]):
         return "VP"
-    elif "director" in pos:
-        return "Director"
     elif any(x in pos for x in ["head of", "head "]):
         return "Head of"
     elif any(x in pos for x in ["manager", "lead", "team lead"]):
